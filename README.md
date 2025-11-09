@@ -4,7 +4,7 @@
 
 ### Запуск
 ```bash
-git clone https://github.com/your-repo/fraud-detection-system.git
+git clone https://github.com/kre1ses/fraud_detection_app.git
 cd fraud-detection-system
 
 # Сборка и запуск всех сервисов
