@@ -26,19 +26,39 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"  # Отключаем автосоздание топиков
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     healthcheck:
       test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9095", "--list"]
       interval: 5s
       timeout: 10s
       retries: 10
 
+  # PostgreSQL база данных
+  postgres:
+    image: postgres:13-alpine  # Используем alpine версию - она меньше и быстрее скачивается
+    networks:
+      - ml-scorer
+    environment:
+      POSTGRES_DB: fraud_detection
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   # Сервис для создания топиков при старте
   kafka-setup:
     image: confluentinc/cp-kafka:7.3.0
     depends_on:
       kafka:
-        condition: service_healthy  # Ждем пока Kafka станет здоровой
+        condition: service_healthy
     networks:
       - ml-scorer
     restart: on-failure
@@ -89,14 +109,41 @@ services:
     networks:
       - ml-scorer
     environment:
-      KAFKA_BROKERS: "kafka:9092"  # Используем внутренний адрес Kafka
+      KAFKA_BROKERS: "kafka:9092"
       KAFKA_TOPIC: "transactions"
+      POSTGRES_HOST: "postgres"
+      POSTGRES_DB: "fraud_detection"
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      POSTGRES_PORT: "5432"
     depends_on:
       - kafka
+      - postgres
     ports:
       - "8501:8501"
+
+  # Новый сервис для записи результатов в PostgreSQL
+  results_writer:
+    build: ./results_writer
+    networks:
+      - ml-scorer
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      KAFKA_SCORING_TOPIC: "scoring"
+      POSTGRES_HOST: "postgres"
+      POSTGRES_DB: "fraud_detection"
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      POSTGRES_PORT: "5432"
+    depends_on:
+      - kafka
+      - postgres
+      - fraud_detector
 
 networks:
   ml-scorer:
     name: ml-scorer
     driver: bridge
+
+volumes:
+  postgres_data:
